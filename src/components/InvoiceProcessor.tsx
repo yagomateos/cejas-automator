@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "./ThemeToggle";
 import { InvoiceList } from "./InvoiceList";
+import { StatsDetail } from "./StatsDetail";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
@@ -39,6 +40,7 @@ export const InvoiceProcessor = () => {
   const [invoiceStart, setInvoiceStart] = useState(1);
   const [editingCell, setEditingCell] = useState<{ row: number; field: keyof ProcessedRow } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showStatsDetail, setShowStatsDetail] = useState<'ingresos' | 'facturas' | 'ticket' | 'clientes' | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const { user, signOut } = useAuth();
@@ -895,7 +897,7 @@ export const InvoiceProcessor = () => {
 
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
-            <Card className="p-3 sm:p-4 md:p-6">
+            <Card className="p-3 sm:p-4 md:p-6 cursor-pointer hover:shadow-lg transition-all hover:scale-105" onClick={() => setShowStatsDetail('ingresos')}>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                 <BarChart3 className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
                 <div className="min-w-0">
@@ -904,7 +906,7 @@ export const InvoiceProcessor = () => {
                 </div>
               </div>
             </Card>
-            <Card className="p-3 sm:p-4 md:p-6">
+            <Card className="p-3 sm:p-4 md:p-6 cursor-pointer hover:shadow-lg transition-all hover:scale-105" onClick={() => setShowStatsDetail('facturas')}>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                 <FileSpreadsheet className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
                 <div className="min-w-0">
@@ -913,7 +915,7 @@ export const InvoiceProcessor = () => {
                 </div>
               </div>
             </Card>
-            <Card className="p-3 sm:p-4 md:p-6">
+            <Card className="p-3 sm:p-4 md:p-6 cursor-pointer hover:shadow-lg transition-all hover:scale-105" onClick={() => setShowStatsDetail('ticket')}>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                 <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
                 <div className="min-w-0">
@@ -922,7 +924,7 @@ export const InvoiceProcessor = () => {
                 </div>
               </div>
             </Card>
-            <Card className="p-3 sm:p-4 md:p-6">
+            <Card className="p-3 sm:p-4 md:p-6 cursor-pointer hover:shadow-lg transition-all hover:scale-105" onClick={() => setShowStatsDetail('clientes')}>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                 <Users className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
                 <div className="min-w-0">
@@ -1203,6 +1205,15 @@ export const InvoiceProcessor = () => {
           </Card>
         )}
       </div>
+
+      {/* Modal de Detalle de Estadísticas */}
+      {showStatsDetail && (
+        <StatsDetail
+          type={showStatsDetail}
+          data={processedData}
+          onClose={() => setShowStatsDetail(null)}
+        />
+      )}
     </div>
   );
 };
