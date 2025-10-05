@@ -94,7 +94,6 @@ export const Auth = () => {
           data: {
             company_name: companyName,
           },
-          emailRedirectTo: window.location.origin,
         },
       });
 
