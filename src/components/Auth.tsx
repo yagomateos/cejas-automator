@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { checkSupabaseAuth } from '@/lib/checkSupabaseConfig';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,19 @@ export const Auth = () => {
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
   const { toast } = useToast();
+
+  useEffect(() => {
+    // Verificar configuración de Supabase al montar
+    checkSupabaseAuth().then(result => {
+      if (!result.isConfigured) {
+        toast({
+          title: '⚠️ Configuración incompleta',
+          description: result.error || 'Verifica la configuración de Supabase',
+          variant: 'destructive',
+        });
+      }
+    });
+  }, []);
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,36 +85,68 @@ export const Auth = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      console.log('📝 Registrando usuario:', email);
+
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: {
             company_name: companyName,
           },
+          emailRedirectTo: window.location.origin,
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error al registrar:', error);
+        throw error;
+      }
 
-      toast({
-        title: '¡Cuenta creada!',
-        description: 'Revisa tu email para verificar tu cuenta',
-      });
+      console.log('✅ Usuario registrado:', data);
+
+      // Si Supabase tiene confirmación de email desactivada, el usuario ya está activo
+      if (data.user && !data.user.confirmed_at && data.user.identities?.length === 0) {
+        toast({
+          title: '⚠️ Revisa tu email',
+          description: 'Hemos enviado un link de verificación. Si no lo recibes, contacta al administrador.',
+        });
+      } else {
+        toast({
+          title: '¡Cuenta creada!',
+          description: 'Ya puedes iniciar sesión con tu email y contraseña',
+        });
+        // Limpiar campos
+        setEmail('');
+        setPassword('');
+        setCompanyName('');
+      }
     } catch (error: any) {
+      console.error('❌ Error completo:', error);
+
       let errorMessage = error.message;
+      let errorTitle = 'Error al registrarse';
 
       // Mensajes de error más claros
       if (error.message.includes('User already registered')) {
-        errorMessage = 'Ya existe una cuenta con este email. Inicia sesión en su lugar.';
+        errorTitle = 'Usuario ya existe';
+        errorMessage = 'Ya existe una cuenta con este email. Ve a "Iniciar Sesión".';
       } else if (error.message.includes('Password should be at least')) {
+        errorTitle = 'Contraseña muy corta';
         errorMessage = 'La contraseña debe tener al menos 6 caracteres';
       } else if (error.message.includes('Invalid email')) {
+        errorTitle = 'Email inválido';
         errorMessage = 'El formato del email no es válido';
+      } else if (error.message.includes('Signup is disabled')) {
+        errorTitle = 'Registro deshabilitado';
+        errorMessage = 'El registro está deshabilitado en Supabase. Contacta al administrador.';
+      } else if (error.status === 401 || error.status === 403) {
+        errorTitle = 'Acceso denegado';
+        errorMessage = 'Supabase bloqueó el registro. Verifica la configuración de Authentication → Email Provider.';
       }
 
       toast({
-        title: 'Error al registrarse',
+        title: errorTitle,
         description: errorMessage,
         variant: 'destructive',
       });
