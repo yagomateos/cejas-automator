@@ -754,8 +754,13 @@ export const InvoiceProcessor = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background p-3 sm:p-4 md:p-8">
-      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 items-center z-50">
-        <ThemeToggle />
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-2 sm:gap-3 items-center z-50">
+        {!isDemoMode && user && (
+          <Button onClick={signOut} variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
+            <LogOut className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Cerrar sesión</span>
+          </Button>
+        )}
         {!isDemoMode && pendingInvoices.length > 0 && (
           <>
             <Button onClick={clearPendingInvoices} variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
@@ -769,12 +774,7 @@ export const InvoiceProcessor = () => {
             </Button>
           </>
         )}
-        {!isDemoMode && user && (
-          <Button onClick={signOut} variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
-            <LogOut className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Cerrar sesión</span>
-          </Button>
-        )}
+        <ThemeToggle />
       </div>
       <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 md:space-y-8 animate-fade-in pt-12 sm:pt-0">
         <div className="text-center space-y-2 sm:space-y-3">
