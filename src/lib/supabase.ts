@@ -1,16 +1,31 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://demo.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'demo-key';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // Modo demo: Si no hay credenciales configuradas, usar valores demo
-const isDemoMode = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
+const isDemoMode = !supabaseUrl || !supabaseAnonKey;
 
 if (isDemoMode) {
-  console.warn('⚠️ Modo DEMO: Configura Supabase en .env para guardar datos');
+  console.error('❌ ERROR: Variables de entorno de Supabase no configuradas');
+  console.log('📝 Variables actuales:');
+  console.log('   VITE_SUPABASE_URL:', supabaseUrl || '(vacía)');
+  console.log('   VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '(configurada)' : '(vacía)');
+  console.log('');
+  console.log('🔧 Para desarrollo local:');
+  console.log('   1. Copia .env.example a .env');
+  console.log('   2. Añade tus credenciales de Supabase');
+  console.log('');
+  console.log('🚀 Para producción (Netlify):');
+  console.log('   1. Ve a Site settings → Environment variables');
+  console.log('   2. Añade VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY');
+  console.log('   3. Redeploy el sitio');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Crear cliente solo si hay credenciales válidas
+export const supabase = isDemoMode
+  ? createClient('https://demo.supabase.co', 'demo-key')
+  : createClient(supabaseUrl, supabaseAnonKey);
 
 // Database types
 export interface Database {
