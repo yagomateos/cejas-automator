@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown } from "lucide-react";
+import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown, TrendingUp, Users, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "./ThemeToggle";
 import * as XLSX from "xlsx";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 interface ProcessedRow {
   fecha: string;
@@ -397,26 +398,88 @@ export const InvoiceProcessor = () => {
     }, 0);
 
     const serviceCounts: Record<string, number> = {};
+    const serviceRevenue: Record<string, number> = {};
     processedData.forEach(row => {
       serviceCounts[row.concepto] = (serviceCounts[row.concepto] || 0) + 1;
+      const amount = parseFloat(row.importeConIva.replace("€", ""));
+      serviceRevenue[row.concepto] = (serviceRevenue[row.concepto] || 0) + amount;
     });
 
     const clientCounts: Record<string, number> = {};
+    const clientRevenue: Record<string, number> = {};
     processedData.forEach(row => {
       if (row.cliente !== "Consumidor final") {
         clientCounts[row.cliente] = (clientCounts[row.cliente] || 0) + 1;
+        const amount = parseFloat(row.importeConIva.replace("€", ""));
+        clientRevenue[row.cliente] = (clientRevenue[row.cliente] || 0) + amount;
       }
     });
 
     const topClients = Object.entries(clientCounts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+      .slice(0, 5)
+      .map(([client, count]) => ({
+        cliente: client,
+        visitas: count,
+        ingresos: clientRevenue[client] || 0
+      }));
+
+    // Agrupar por mes
+    const monthlyData: Record<string, { ingresos: number; facturas: number }> = {};
+    processedData.forEach(row => {
+      const [, month, year] = row.fecha.split("/");
+      const monthKey = `${month}/${year}`;
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { ingresos: 0, facturas: 0 };
+      }
+      const amount = parseFloat(row.importeConIva.replace("€", ""));
+      monthlyData[monthKey].ingresos += amount;
+      monthlyData[monthKey].facturas += 1;
+    });
+
+    const monthlyChart = Object.entries(monthlyData)
+      .sort((a, b) => {
+        const [monthA, yearA] = a[0].split("/");
+        const [monthB, yearB] = b[0].split("/");
+        return new Date(`${yearA}-${monthA}`).getTime() - new Date(`${yearB}-${monthB}`).getTime();
+      })
+      .map(([month, data]) => ({
+        mes: month,
+        ingresos: parseFloat(data.ingresos.toFixed(2)),
+        facturas: data.facturas
+      }));
+
+    // Datos para gráfico de servicios
+    const servicesChart = Object.entries(serviceCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([servicio, cantidad]) => ({
+        servicio,
+        cantidad,
+        ingresos: parseFloat((serviceRevenue[servicio] || 0).toFixed(2))
+      }));
+
+    // Formas de pago
+    const paymentCounts: Record<string, number> = {};
+    processedData.forEach(row => {
+      paymentCounts[row.formaPago] = (paymentCounts[row.formaPago] || 0) + 1;
+    });
+
+    const paymentChart = Object.entries(paymentCounts).map(([metodo, cantidad]) => ({
+      metodo,
+      cantidad
+    }));
+
+    const ticketPromedio = totalIngresos / processedData.length;
 
     return {
       totalIngresos,
       totalFacturas: processedData.length,
+      ticketPromedio,
       serviceCounts,
       topClients,
+      monthlyChart,
+      servicesChart,
+      paymentChart,
     };
   };
 
@@ -538,7 +601,7 @@ export const InvoiceProcessor = () => {
         </Card>
 
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card className="p-6">
               <div className="flex items-center gap-3">
                 <BarChart3 className="h-8 w-8 text-primary" />
@@ -558,17 +621,20 @@ export const InvoiceProcessor = () => {
               </div>
             </Card>
             <Card className="p-6">
-              <div>
-                <p className="text-sm text-muted-foreground mb-2">Servicios más vendidos</p>
-                <div className="space-y-1">
-                  {Object.entries(stats.serviceCounts)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3)
-                    .map(([service, count]) => (
-                      <p key={service} className="text-sm">
-                        <span className="font-medium">{service}:</span> {count}
-                      </p>
-                    ))}
+              <div className="flex items-center gap-3">
+                <TrendingUp className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Ticket Promedio</p>
+                  <p className="text-2xl font-bold">€{stats.ticketPromedio.toFixed(2)}</p>
+                </div>
+              </div>
+            </Card>
+            <Card className="p-6">
+              <div className="flex items-center gap-3">
+                <Users className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-sm text-muted-foreground">Clientes Únicos</p>
+                  <p className="text-2xl font-bold">{stats.topClients.length}</p>
                 </div>
               </div>
             </Card>
@@ -704,28 +770,105 @@ export const InvoiceProcessor = () => {
               <TabsContent value="stats">
                 {stats && (
                   <div className="space-y-6">
+                    {/* Gráfico de evolución mensual */}
+                    {stats.monthlyChart.length > 0 && (
+                      <Card className="p-6">
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                          <Calendar className="h-5 w-5 text-primary" />
+                          Evolución de Ingresos por Mes
+                        </h3>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <AreaChart data={stats.monthlyChart}>
+                            <defs>
+                              <linearGradient id="colorIngresos" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.8}/>
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="mes" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Area type="monotone" dataKey="ingresos" stroke="#6366f1" fillOpacity={1} fill="url(#colorIngresos)" />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </Card>
+                    )}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Gráfico de servicios */}
+                      <Card className="p-6">
+                        <h3 className="text-lg font-semibold mb-4">Servicios más Vendidos</h3>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={stats.servicesChart}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="servicio" angle={-45} textAnchor="end" height={100} />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="cantidad" fill="#6366f1" name="Cantidad vendida" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Card>
+
+                      {/* Gráfico de formas de pago */}
+                      <Card className="p-6">
+                        <h3 className="text-lg font-semibold mb-4">Distribución de Formas de Pago</h3>
+                        <ResponsiveContainer width="100%" height={300}>
+                          <PieChart>
+                            <Pie
+                              data={stats.paymentChart}
+                              cx="50%"
+                              cy="50%"
+                              labelLine={false}
+                              label={({ metodo, percent }) => `${metodo}: ${(percent * 100).toFixed(0)}%`}
+                              outerRadius={80}
+                              fill="#8884d8"
+                              dataKey="cantidad"
+                            >
+                              {stats.paymentChart.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899'][index % 3]} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </Card>
+                    </div>
+
+                    {/* Top clientes con ingresos */}
                     <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4">Top 5 Clientes</h3>
-                      <div className="space-y-2">
-                        {stats.topClients.map(([client, count]) => (
-                          <div key={client} className="flex justify-between items-center">
-                            <span className="text-sm">{client}</span>
-                            <span className="font-semibold">{count} visitas</span>
+                      <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                        <Users className="h-5 w-5 text-primary" />
+                        Top 5 Clientes
+                      </h3>
+                      <div className="space-y-3">
+                        {stats.topClients.map((client) => (
+                          <div key={client.cliente} className="flex justify-between items-center p-3 bg-accent/5 rounded-lg">
+                            <div>
+                              <p className="font-medium">{client.cliente}</p>
+                              <p className="text-sm text-muted-foreground">{client.visitas} visitas</p>
+                            </div>
+                            <p className="text-lg font-bold text-primary">€{client.ingresos.toFixed(2)}</p>
                           </div>
                         ))}
                       </div>
                     </Card>
 
+                    {/* Ingresos por servicio */}
                     <Card className="p-6">
-                      <h3 className="text-lg font-semibold mb-4">Servicios por categoría</h3>
-                      <div className="space-y-2">
-                        {Object.entries(stats.serviceCounts).map(([service, count]) => (
-                          <div key={service} className="flex justify-between items-center">
-                            <span className="text-sm">{service}</span>
-                            <span className="font-semibold">{count}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <h3 className="text-lg font-semibold mb-4">Ingresos por Servicio</h3>
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={stats.servicesChart} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" />
+                          <YAxis dataKey="servicio" type="category" width={150} />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="ingresos" fill="#10b981" name="Ingresos (€)" />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </Card>
                   </div>
                 )}
