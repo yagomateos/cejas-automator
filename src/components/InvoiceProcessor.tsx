@@ -218,6 +218,37 @@ export const InvoiceProcessor = () => {
     }
   };
 
+  const deleteMonthInvoices = async (period: string, invoices: ProcessedRow[]) => {
+    if (!user) return;
+
+    try {
+      // Eliminar todas las facturas del mes
+      const invoiceNumbers = invoices.map(inv => inv.numeroFactura);
+
+      const { error } = await supabase
+        .from('facturas')
+        .delete()
+        .eq('user_id', user.id)
+        .in('numero_factura', invoiceNumbers);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Facturas eliminadas',
+        description: `${invoices.length} facturas eliminadas correctamente`,
+      });
+
+      // Recargar facturas
+      await loadInvoicesFromSupabase();
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
   const clearAllInvoices = async () => {
     if (!user) return;
 
@@ -722,38 +753,39 @@ export const InvoiceProcessor = () => {
   const isDemoMode = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background p-4 md:p-8">
-      <div className="absolute top-4 right-4 flex gap-2 items-center">
+    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background p-3 sm:p-4 md:p-8">
+      <div className="absolute top-2 right-2 sm:top-4 sm:right-4 flex gap-1 sm:gap-2 items-center z-50">
         <ThemeToggle />
         {!isDemoMode && pendingInvoices.length > 0 && (
           <>
-            <Button onClick={clearPendingInvoices} variant="outline" size="sm">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Descartar
+            <Button onClick={clearPendingInvoices} variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
+              <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Descartar</span>
             </Button>
-            <Button onClick={saveInvoicesToSupabase} disabled={saving} variant="default">
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? 'Guardando...' : `Guardar ${pendingInvoices.length}`}
+            <Button onClick={saveInvoicesToSupabase} disabled={saving} variant="default" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
+              <Save className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">{saving ? 'Guardando...' : `Guardar ${pendingInvoices.length}`}</span>
+              <span className="sm:hidden">{pendingInvoices.length}</span>
             </Button>
           </>
         )}
         {!isDemoMode && user && (
-          <Button onClick={signOut} variant="outline">
-            <LogOut className="mr-2 h-4 w-4" />
-            Cerrar sesión
+          <Button onClick={signOut} variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3">
+            <LogOut className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Cerrar sesión</span>
           </Button>
         )}
       </div>
-      <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
-        <div className="text-center space-y-3">
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+      <div className="max-w-7xl mx-auto space-y-4 sm:space-y-6 md:space-y-8 animate-fade-in pt-12 sm:pt-0">
+        <div className="text-center space-y-2 sm:space-y-3">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             Procesador de Facturas
           </h1>
-          <p className="text-lg text-muted-foreground">
+          <p className="text-sm sm:text-base md:text-lg text-muted-foreground">
             Automatiza tus facturas en segundos
           </p>
           {user?.email && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               Conectado como: <span className="font-medium text-foreground">{user.email}</span>
             </p>
           )}
@@ -862,40 +894,40 @@ export const InvoiceProcessor = () => {
         </Card>
 
         {stats && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="p-6">
-              <div className="flex items-center gap-3">
-                <BarChart3 className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Ingresos</p>
-                  <p className="text-2xl font-bold">€{stats.totalIngresos.toFixed(2)}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 md:gap-4">
+            <Card className="p-3 sm:p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                <BarChart3 className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Total Ingresos</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold truncate">€{stats.totalIngresos.toFixed(2)}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-6">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Facturas</p>
-                  <p className="text-2xl font-bold">{stats.totalFacturas}</p>
+            <Card className="p-3 sm:p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                <FileSpreadsheet className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Total Facturas</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold truncate">{stats.totalFacturas}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-6">
-              <div className="flex items-center gap-3">
-                <TrendingUp className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Ticket Promedio</p>
-                  <p className="text-2xl font-bold">€{stats.ticketPromedio.toFixed(2)}</p>
+            <Card className="p-3 sm:p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                <TrendingUp className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Ticket Promedio</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold truncate">€{stats.ticketPromedio.toFixed(2)}</p>
                 </div>
               </div>
             </Card>
-            <Card className="p-6">
-              <div className="flex items-center gap-3">
-                <Users className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Clientes Únicos</p>
-                  <p className="text-2xl font-bold">{stats.topClients.length}</p>
+            <Card className="p-3 sm:p-4 md:p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                <Users className="h-6 w-6 sm:h-8 sm:w-8 text-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Clientes Únicos</p>
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold truncate">{stats.topClients.length}</p>
                 </div>
               </div>
             </Card>
@@ -903,38 +935,41 @@ export const InvoiceProcessor = () => {
         )}
 
         {(processedData.length > 0 || filteredData.length > 0) && (
-          <Card className="p-6 shadow-card animate-slide-up">
+          <Card className="p-3 sm:p-4 md:p-6 shadow-card animate-slide-up">
             <Tabs defaultValue="list">
-              <TabsList className="mb-4">
-                <TabsTrigger value="list">
-                  <List className="h-4 w-4 mr-2" />
-                  Lista
+              <TabsList className="mb-4 grid w-full grid-cols-2 sm:grid-cols-3">
+                <TabsTrigger value="list" className="text-xs sm:text-sm">
+                  <List className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Lista</span>
                 </TabsTrigger>
-                <TabsTrigger value="table">Tabla Completa</TabsTrigger>
-                <TabsTrigger value="stats">Estadísticas</TabsTrigger>
+                <TabsTrigger value="table" className="text-xs sm:text-sm hidden sm:flex">Tabla Completa</TabsTrigger>
+                <TabsTrigger value="stats" className="text-xs sm:text-sm">
+                  <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Estadísticas</span>
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="list">
                 {pendingInvoices.length > 0 && (
-                  <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
-                    <p className="text-yellow-700 dark:text-yellow-300 font-medium mb-2">
+                  <div className="mb-3 sm:mb-4 p-3 sm:p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
+                    <p className="text-yellow-700 dark:text-yellow-300 font-medium mb-1 sm:mb-2 text-sm sm:text-base">
                       📋 {pendingInvoices.length} facturas pendientes de guardar
                     </p>
-                    <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                    <p className="text-xs sm:text-sm text-yellow-600 dark:text-yellow-400">
                       Estas facturas solo se mostrarán aquí. Haz clic en "Guardar" para añadirlas permanentemente.
                     </p>
                   </div>
                 )}
-                <InvoiceList data={processedData} onDelete={deleteInvoice} />
+                <InvoiceList data={processedData} onDelete={deleteInvoice} onDeleteMonth={deleteMonthInvoices} />
                 {processedData.length === 0 && pendingInvoices.length === 0 && (
-                  <div className="text-center py-12 text-muted-foreground">
+                  <div className="text-center py-8 sm:py-12 text-muted-foreground text-sm sm:text-base">
                     No hay facturas guardadas. Sube un archivo y guárdalo para comenzar.
                   </div>
                 )}
               </TabsContent>
 
               <TabsContent value="table" className="space-y-4">
-                <div className="flex flex-wrap gap-4 justify-between items-center">
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 justify-between items-stretch sm:items-center">
                   <div className="flex-1 min-w-[250px]">
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -946,19 +981,20 @@ export const InvoiceProcessor = () => {
                       />
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {!isDemoMode && processedData.length > 0 && (
-                      <Button onClick={clearAllInvoices} variant="destructive" size="sm">
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Borrar guardadas
+                      <Button onClick={clearAllInvoices} variant="destructive" size="sm" className="flex-1 sm:flex-none">
+                        <Trash2 className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                        <span className="hidden sm:inline">Borrar guardadas</span>
+                        <span className="sm:hidden">Borrar</span>
                       </Button>
                     )}
-                    <Button onClick={downloadCSV} variant="outline">
-                      <Download className="mr-2 h-4 w-4" />
+                    <Button onClick={downloadCSV} variant="outline" size="sm" className="flex-1 sm:flex-none">
+                      <Download className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
                       CSV
                     </Button>
-                    <Button onClick={downloadExcel}>
-                      <FileDown className="mr-2 h-4 w-4" />
+                    <Button onClick={downloadExcel} size="sm" className="flex-1 sm:flex-none">
+                      <FileDown className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
                       Excel
                     </Button>
                   </div>
