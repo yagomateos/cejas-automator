@@ -20,31 +20,44 @@ export const Auth = () => {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      console.log('🔐 Intentando iniciar sesión con:', email);
+
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error de autenticación:', error);
+        throw error;
+      }
+
+      console.log('✅ Login exitoso:', data.user?.email);
 
       toast({
         title: '¡Bienvenido!',
         description: 'Has iniciado sesión correctamente',
       });
     } catch (error: any) {
+      console.error('❌ Error completo:', error);
+
       let errorMessage = error.message;
+      let errorTitle = 'Error al iniciar sesión';
 
       // Mensajes de error más claros
       if (error.message.includes('Invalid login credentials')) {
-        errorMessage = 'Email o contraseña incorrectos';
+        errorTitle = 'Credenciales inválidas';
+        errorMessage = 'El email o la contraseña son incorrectos. Por favor verifica e intenta de nuevo.';
       } else if (error.message.includes('Email not confirmed')) {
-        errorMessage = 'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.';
+        errorTitle = 'Email no verificado';
+        errorMessage = 'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada (y spam).';
       } else if (error.message.includes('User not found')) {
-        errorMessage = 'No existe una cuenta con este email. Regístrate primero.';
+        errorTitle = 'Usuario no encontrado';
+        errorMessage = 'No existe una cuenta con este email. Por favor regístrate primero.';
       }
 
       toast({
-        title: 'Error al iniciar sesión',
+        title: errorTitle,
         description: errorMessage,
         variant: 'destructive',
       });
@@ -115,6 +128,11 @@ export const Auth = () => {
           </TabsList>
 
           <TabsContent value="signin">
+            <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                💡 <strong>¿Primera vez?</strong> Usa la pestaña "Registrarse" para crear tu cuenta.
+              </p>
+            </div>
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="signin-email">Email</Label>
@@ -155,6 +173,11 @@ export const Auth = () => {
           </TabsContent>
 
           <TabsContent value="signup">
+            <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <p className="text-sm text-green-700 dark:text-green-300">
+                ✅ <strong>Después de registrarte:</strong> Verifica tu email antes de iniciar sesión.
+              </p>
+            </div>
             <form onSubmit={handleSignUp} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="signup-company">Nombre de la Empresa</Label>
