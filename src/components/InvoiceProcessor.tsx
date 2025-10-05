@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown, TrendingUp, Users, Calendar, LogOut, Save } from "lucide-react";
+import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown, TrendingUp, Users, Calendar, LogOut, Save, List, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "./ThemeToggle";
+import { InvoiceList } from "./InvoiceList";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
@@ -29,8 +30,9 @@ interface PriceConfig {
 
 export const InvoiceProcessor = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [processedData, setProcessedData] = useState<ProcessedRow[]>([]);
+  const [processedData, setProcessedData] = useState<ProcessedRow[]>([]); // Facturas cargadas desde Supabase
   const [filteredData, setFilteredData] = useState<ProcessedRow[]>([]);
+  const [pendingInvoices, setPendingInvoices] = useState<ProcessedRow[]>([]); // Facturas recién subidas, sin guardar
   const [isDragging, setIsDragging] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [invoicePrefix, setInvoicePrefix] = useState("FAC-");
@@ -59,6 +61,11 @@ export const InvoiceProcessor = () => {
     }
   }, [user]);
 
+  // Actualizar filteredData cuando cambien processedData
+  useEffect(() => {
+    setFilteredData(processedData);
+  }, [processedData]);
+
   const loadInvoicesFromSupabase = async () => {
     try {
       const { data, error } = await supabase
@@ -77,7 +84,7 @@ export const InvoiceProcessor = () => {
           precioSinIva: `€${factura.precio_sin_iva}`,
           numeroFactura: factura.numero_factura,
           formaPago: factura.forma_pago,
-          cliente: factura.cliente_id || 'Consumidor final',
+          cliente: factura.notas || 'Consumidor final', // Leer nombre desde notas temporalmente
         }));
 
         setProcessedData(loaded);
@@ -85,22 +92,45 @@ export const InvoiceProcessor = () => {
       }
     } catch (error: any) {
       console.error('Error loading invoices:', error);
+      // No mostrar error al usuario si solo es porque no hay facturas
     }
   };
 
   const saveInvoicesToSupabase = async () => {
-    if (!user || processedData.length === 0) return;
+    if (!user || pendingInvoices.length === 0) return;
 
     setSaving(true);
     try {
-      // Primero, eliminar facturas existentes del usuario
-      await supabase
+      // Obtener facturas existentes del usuario
+      const { data: existingInvoices, error: fetchError } = await supabase
         .from('facturas')
-        .delete()
+        .select('numero_factura')
         .eq('user_id', user.id);
 
-      // Insertar todas las facturas
-      const facturasToInsert = processedData.map((row) => ({
+      if (fetchError) throw fetchError;
+
+      // Crear set de números de factura existentes para detectar duplicados
+      const existingNumbers = new Set(
+        existingInvoices?.map(inv => inv.numero_factura) || []
+      );
+
+      // Filtrar solo las facturas nuevas (no duplicadas)
+      const newInvoices = pendingInvoices.filter(
+        row => !existingNumbers.has(row.numeroFactura)
+      );
+
+      if (newInvoices.length === 0) {
+        toast({
+          title: 'No hay facturas nuevas',
+          description: 'Todas las facturas ya existen en la base de datos',
+          variant: 'default',
+        });
+        setSaving(false);
+        return;
+      }
+
+      // Insertar solo las facturas nuevas
+      const facturasToInsert = newInvoices.map((row) => ({
         user_id: user.id,
         numero_factura: row.numeroFactura,
         fecha: row.fecha.split('/').reverse().join('-'), // Convertir DD/MM/YYYY a YYYY-MM-DD
@@ -109,7 +139,8 @@ export const InvoiceProcessor = () => {
         precio_sin_iva: parseFloat(row.precioSinIva.replace('€', '')),
         forma_pago: row.formaPago,
         estado: 'emitida' as const,
-        cliente_id: row.cliente !== 'Consumidor final' ? row.cliente : null,
+        cliente_id: null,
+        notas: row.cliente !== 'Consumidor final' ? row.cliente : null,
       }));
 
       const { error } = await supabase
@@ -118,10 +149,21 @@ export const InvoiceProcessor = () => {
 
       if (error) throw error;
 
+      const duplicates = pendingInvoices.length - newInvoices.length;
+
       toast({
         title: '¡Guardado exitosamente!',
-        description: `${processedData.length} facturas guardadas en la nube`,
+        description: duplicates > 0
+          ? `${newInvoices.length} facturas nuevas agregadas. ${duplicates} duplicadas omitidas.`
+          : `${newInvoices.length} facturas agregadas a la nube`,
       });
+
+      // Limpiar facturas pendientes después de guardar
+      setPendingInvoices([]);
+
+      // Recargar todas las facturas para sincronizar con la base de datos
+      // Esto asegura que veamos todas las facturas existentes + las nuevas
+      await loadInvoicesFromSupabase();
     } catch (error: any) {
       toast({
         title: 'Error al guardar',
@@ -130,6 +172,79 @@ export const InvoiceProcessor = () => {
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const clearPendingInvoices = () => {
+    if (!confirm('¿Descartar las facturas sin guardar?')) {
+      return;
+    }
+    setPendingInvoices([]);
+    toast({
+      title: 'Facturas descartadas',
+      description: 'Las facturas pendientes han sido eliminadas',
+    });
+  };
+
+  const deleteInvoice = async (invoice: ProcessedRow) => {
+    if (!user) return;
+
+    if (!confirm(`¿Eliminar la factura ${invoice.numeroFactura}?`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('facturas')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('numero_factura', invoice.numeroFactura);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Factura eliminada',
+        description: `Factura ${invoice.numeroFactura} eliminada correctamente`,
+      });
+
+      // Recargar facturas
+      await loadInvoicesFromSupabase();
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const clearAllInvoices = async () => {
+    if (!user) return;
+
+    if (!confirm('¿Estás seguro de que quieres eliminar TODAS las facturas guardadas en la nube? Esta acción no se puede deshacer.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('facturas')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      toast({
+        title: 'Facturas eliminadas',
+        description: 'Todas las facturas han sido eliminadas de la nube',
+      });
+
+      setProcessedData([]);
+    } catch (error: any) {
+      toast({
+        title: 'Error al eliminar',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
   };
 
@@ -192,6 +307,21 @@ export const InvoiceProcessor = () => {
         // File is already processed, just return it as is
         const dataRows = rows.slice(1).filter(row => row.some(cell => cell && cell.toString().trim()));
 
+        // Obtener el último número de factura existente para continuar la numeración
+        let startNumber = invoiceStart;
+        if (processedData.length > 0) {
+          const existingNumbers = processedData
+            .map(inv => {
+              const match = inv.numeroFactura.match(/\d+$/);
+              return match ? parseInt(match[0]) : 0;
+            })
+            .filter(num => !isNaN(num));
+
+          if (existingNumbers.length > 0) {
+            startNumber = Math.max(...existingNumbers) + 1;
+          }
+        }
+
         const processed: ProcessedRow[] = dataRows.map((row, index) => {
           // Map the already processed data
           const fecha = row[0] || "";
@@ -217,17 +347,18 @@ export const InvoiceProcessor = () => {
             concepto,
             importeConIva,
             precioSinIva,
-            numeroFactura: `${invoicePrefix}${String(invoiceStart + index).padStart(3, "0")}`,
+            numeroFactura: `${invoicePrefix}${String(startNumber + index).padStart(3, "0")}`,
             formaPago,
             cliente,
           };
         }).filter(row => row.fecha && row.concepto);
 
-        setProcessedData(processed);
-        setFilteredData(processed);
+        // Guardar en pendientes para que el usuario las guarde manualmente
+        setPendingInvoices(processed);
+
         toast({
           title: "¡Procesado exitosamente!",
-          description: `${processed.length} facturas procesadas`,
+          description: `${processed.length} facturas listas para guardar`,
         });
         return;
       }
@@ -322,15 +453,32 @@ export const InvoiceProcessor = () => {
           return dateA.getTime() - dateB.getTime();
         });
 
+      // Obtener el último número de factura existente para continuar la numeración
+      let startNumber = invoiceStart;
+      if (processedData.length > 0) {
+        // Extraer números de las facturas existentes
+        const existingNumbers = processedData
+          .map(inv => {
+            const match = inv.numeroFactura.match(/\d+$/);
+            return match ? parseInt(match[0]) : 0;
+          })
+          .filter(num => !isNaN(num));
+
+        if (existingNumbers.length > 0) {
+          startNumber = Math.max(...existingNumbers) + 1;
+        }
+      }
+
       processed.forEach((row, index) => {
-        row.numeroFactura = `${invoicePrefix}${String(invoiceStart + index).padStart(3, "0")}`;
+        row.numeroFactura = `${invoicePrefix}${String(startNumber + index).padStart(3, "0")}`;
       });
 
-      setProcessedData(processed);
-      setFilteredData(processed);
+      // Guardar en pendientes para que el usuario las guarde manualmente
+      setPendingInvoices(processed);
+
       toast({
         title: "¡Procesado exitosamente!",
-        description: `${processed.length} facturas procesadas`,
+        description: `${processed.length} facturas listas para guardar`,
       });
     } catch (error) {
       toast({
@@ -389,6 +537,7 @@ export const InvoiceProcessor = () => {
 
   const handleSearch = (term: string) => {
     setSearchTerm(term);
+
     if (!term.trim()) {
       setFilteredData(processedData);
       return;
@@ -475,6 +624,7 @@ export const InvoiceProcessor = () => {
   };
 
   const getStats = () => {
+    // Solo usar facturas guardadas en Supabase para las estadísticas
     if (processedData.length === 0) return null;
 
     const totalIngresos = processedData.reduce((sum, row) => {
@@ -569,21 +719,30 @@ export const InvoiceProcessor = () => {
   };
 
   const stats = getStats();
+  const isDemoMode = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background p-4 md:p-8">
       <div className="absolute top-4 right-4 flex gap-2 items-center">
         <ThemeToggle />
-        {processedData.length > 0 && (
-          <Button onClick={saveInvoicesToSupabase} disabled={saving} variant="outline">
-            <Save className="mr-2 h-4 w-4" />
-            {saving ? 'Guardando...' : 'Guardar en la nube'}
+        {!isDemoMode && pendingInvoices.length > 0 && (
+          <>
+            <Button onClick={clearPendingInvoices} variant="outline" size="sm">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Descartar
+            </Button>
+            <Button onClick={saveInvoicesToSupabase} disabled={saving} variant="default">
+              <Save className="mr-2 h-4 w-4" />
+              {saving ? 'Guardando...' : `Guardar ${pendingInvoices.length}`}
+            </Button>
+          </>
+        )}
+        {!isDemoMode && user && (
+          <Button onClick={signOut} variant="outline">
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar sesión
           </Button>
         )}
-        <Button onClick={signOut} variant="outline">
-          <LogOut className="mr-2 h-4 w-4" />
-          Cerrar sesión
-        </Button>
       </div>
       <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
         <div className="text-center space-y-3">
@@ -743,13 +902,36 @@ export const InvoiceProcessor = () => {
           </div>
         )}
 
-        {processedData.length > 0 && (
+        {(processedData.length > 0 || filteredData.length > 0) && (
           <Card className="p-6 shadow-card animate-slide-up">
-            <Tabs defaultValue="table">
+            <Tabs defaultValue="list">
               <TabsList className="mb-4">
-                <TabsTrigger value="table">Tabla</TabsTrigger>
+                <TabsTrigger value="list">
+                  <List className="h-4 w-4 mr-2" />
+                  Lista
+                </TabsTrigger>
+                <TabsTrigger value="table">Tabla Completa</TabsTrigger>
                 <TabsTrigger value="stats">Estadísticas</TabsTrigger>
               </TabsList>
+
+              <TabsContent value="list">
+                {pendingInvoices.length > 0 && (
+                  <div className="mb-4 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
+                    <p className="text-yellow-700 dark:text-yellow-300 font-medium mb-2">
+                      📋 {pendingInvoices.length} facturas pendientes de guardar
+                    </p>
+                    <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                      Estas facturas solo se mostrarán aquí. Haz clic en "Guardar" para añadirlas permanentemente.
+                    </p>
+                  </div>
+                )}
+                <InvoiceList data={processedData} onDelete={deleteInvoice} />
+                {processedData.length === 0 && pendingInvoices.length === 0 && (
+                  <div className="text-center py-12 text-muted-foreground">
+                    No hay facturas guardadas. Sube un archivo y guárdalo para comenzar.
+                  </div>
+                )}
+              </TabsContent>
 
               <TabsContent value="table" className="space-y-4">
                 <div className="flex flex-wrap gap-4 justify-between items-center">
@@ -765,6 +947,12 @@ export const InvoiceProcessor = () => {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    {!isDemoMode && processedData.length > 0 && (
+                      <Button onClick={clearAllInvoices} variant="destructive" size="sm">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Borrar guardadas
+                      </Button>
+                    )}
                     <Button onClick={downloadCSV} variant="outline">
                       <Download className="mr-2 h-4 w-4" />
                       CSV
@@ -929,7 +1117,7 @@ export const InvoiceProcessor = () => {
                               fill="#8884d8"
                               dataKey="cantidad"
                             >
-                              {stats.paymentChart.map((entry, index) => (
+                              {stats.paymentChart.map((_entry, index) => (
                                 <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899'][index % 3]} />
                               ))}
                             </Pie>
