@@ -32,9 +32,20 @@ export const Auth = () => {
         description: 'Has iniciado sesión correctamente',
       });
     } catch (error: any) {
+      let errorMessage = error.message;
+
+      // Mensajes de error más claros
+      if (error.message.includes('Invalid login credentials')) {
+        errorMessage = 'Email o contraseña incorrectos';
+      } else if (error.message.includes('Email not confirmed')) {
+        errorMessage = 'Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.';
+      } else if (error.message.includes('User not found')) {
+        errorMessage = 'No existe una cuenta con este email. Regístrate primero.';
+      }
+
       toast({
         title: 'Error al iniciar sesión',
-        description: error.message,
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
@@ -64,9 +75,20 @@ export const Auth = () => {
         description: 'Revisa tu email para verificar tu cuenta',
       });
     } catch (error: any) {
+      let errorMessage = error.message;
+
+      // Mensajes de error más claros
+      if (error.message.includes('User already registered')) {
+        errorMessage = 'Ya existe una cuenta con este email. Inicia sesión en su lugar.';
+      } else if (error.message.includes('Password should be at least')) {
+        errorMessage = 'La contraseña debe tener al menos 6 caracteres';
+      } else if (error.message.includes('Invalid email')) {
+        errorMessage = 'El formato del email no es válido';
+      }
+
       toast({
         title: 'Error al registrarse',
-        description: error.message,
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
