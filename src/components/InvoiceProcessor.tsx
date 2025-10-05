@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown, TrendingUp, Users, Calendar } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Upload, Download, FileSpreadsheet, Settings, BarChart3, Search, FileDown, TrendingUp, Users, Calendar, LogOut, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import * as XLSX from "xlsx";
 import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Area, AreaChart } from "recharts";
 
@@ -34,8 +36,10 @@ export const InvoiceProcessor = () => {
   const [invoicePrefix, setInvoicePrefix] = useState("FAC-");
   const [invoiceStart, setInvoiceStart] = useState(1);
   const [editingCell, setEditingCell] = useState<{ row: number; field: keyof ProcessedRow } | null>(null);
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  const { user, signOut } = useAuth();
 
   const [conceptMap, setConceptMap] = useState<PriceConfig>({
     "20": "Diseño de cejas",
@@ -47,6 +51,87 @@ export const InvoiceProcessor = () => {
   });
 
   const paymentMethods = ["Transferencia bancaria", "Ingreso en cuenta", "Bizum"];
+
+  // Cargar facturas desde Supabase al montar el componente
+  useEffect(() => {
+    if (user) {
+      loadInvoicesFromSupabase();
+    }
+  }, [user]);
+
+  const loadInvoicesFromSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('facturas')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('fecha', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const loaded: ProcessedRow[] = data.map((factura) => ({
+          fecha: new Date(factura.fecha).toLocaleDateString('es-ES'),
+          concepto: factura.concepto,
+          importeConIva: `€${factura.importe_con_iva}`,
+          precioSinIva: `€${factura.precio_sin_iva}`,
+          numeroFactura: factura.numero_factura,
+          formaPago: factura.forma_pago,
+          cliente: factura.cliente_id || 'Consumidor final',
+        }));
+
+        setProcessedData(loaded);
+        setFilteredData(loaded);
+      }
+    } catch (error: any) {
+      console.error('Error loading invoices:', error);
+    }
+  };
+
+  const saveInvoicesToSupabase = async () => {
+    if (!user || processedData.length === 0) return;
+
+    setSaving(true);
+    try {
+      // Primero, eliminar facturas existentes del usuario
+      await supabase
+        .from('facturas')
+        .delete()
+        .eq('user_id', user.id);
+
+      // Insertar todas las facturas
+      const facturasToInsert = processedData.map((row) => ({
+        user_id: user.id,
+        numero_factura: row.numeroFactura,
+        fecha: row.fecha.split('/').reverse().join('-'), // Convertir DD/MM/YYYY a YYYY-MM-DD
+        concepto: row.concepto,
+        importe_con_iva: parseFloat(row.importeConIva.replace('€', '')),
+        precio_sin_iva: parseFloat(row.precioSinIva.replace('€', '')),
+        forma_pago: row.formaPago,
+        estado: 'emitida' as const,
+        cliente_id: row.cliente !== 'Consumidor final' ? row.cliente : null,
+      }));
+
+      const { error } = await supabase
+        .from('facturas')
+        .insert(facturasToInsert);
+
+      if (error) throw error;
+
+      toast({
+        title: '¡Guardado exitosamente!',
+        description: `${processedData.length} facturas guardadas en la nube`,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error al guardar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const parseCSV = (text: string): string[][] => {
     const lines = text.split("\n").filter(line => line.trim());
@@ -487,7 +572,19 @@ export const InvoiceProcessor = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/20 to-background p-4 md:p-8">
-      <ThemeToggle />
+      <div className="absolute top-4 right-4 flex gap-2 items-center">
+        <ThemeToggle />
+        {processedData.length > 0 && (
+          <Button onClick={saveInvoicesToSupabase} disabled={saving} variant="outline">
+            <Save className="mr-2 h-4 w-4" />
+            {saving ? 'Guardando...' : 'Guardar en la nube'}
+          </Button>
+        )}
+        <Button onClick={signOut} variant="outline">
+          <LogOut className="mr-2 h-4 w-4" />
+          Cerrar sesión
+        </Button>
+      </div>
       <div className="max-w-7xl mx-auto space-y-8 animate-fade-in">
         <div className="text-center space-y-3">
           <h1 className="text-4xl md:text-5xl font-bold bg-gradient-primary bg-clip-text text-transparent">
@@ -496,6 +593,11 @@ export const InvoiceProcessor = () => {
           <p className="text-lg text-muted-foreground">
             Automatiza tus facturas en segundos
           </p>
+          {user?.email && (
+            <p className="text-sm text-muted-foreground">
+              Conectado como: <span className="font-medium text-foreground">{user.email}</span>
+            </p>
+          )}
         </div>
 
         {/* Configuración */}
